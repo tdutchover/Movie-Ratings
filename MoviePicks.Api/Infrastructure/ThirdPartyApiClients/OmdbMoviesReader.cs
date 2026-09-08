@@ -4,12 +4,12 @@ using MoviePicks.Api.Models;
 using MoviePicks.Contracts.DTOs;
 using MoviePicks.Contracts.Enums;
 
-public class OmdbApiMoviesReader : IOmdbApiMoviesReader
+public class OmdbMoviesReader : IOmdbMoviesReader
 {
     private readonly HttpClient httpClient;
     private readonly string apiKey;
 
-    public OmdbApiMoviesReader(HttpClient httpClient, IConfiguration configuration)
+    public OmdbMoviesReader(HttpClient httpClient, IConfiguration configuration)
     {
         this.httpClient = httpClient;
         this.apiKey = configuration[ConfigurationManagerKeys.OpenMovieDatabaseApiKey] ??
@@ -32,6 +32,12 @@ public class OmdbApiMoviesReader : IOmdbApiMoviesReader
             throw new InvalidOperationException("The JSON response is empty or invalid.");
         }
 
+        // OMDb can report failure in the JSON body even when the HTTP status is 200.
+        if (!IsSuccessfulOmdbResponse(response.Response))
+        {
+            throw new InvalidOperationException("OMDb did not return successful movie details.");
+        }
+
         return response;
     }
 
@@ -41,7 +47,8 @@ public class OmdbApiMoviesReader : IOmdbApiMoviesReader
 
         OmdbMovieSearchResult? result = await this.httpClient.GetFromJsonAsync<OmdbMovieSearchResult>(url);
 
-        if (result?.search != null && result.Response?.Equals("True") == true)
+        // Return results only when OMDb reports success and provides a non-null search collection.
+        if (result?.search != null && IsSuccessfulOmdbResponse(result.Response))
         {
             return result.search.ToList();
         }
@@ -53,6 +60,14 @@ public class OmdbApiMoviesReader : IOmdbApiMoviesReader
             // TODO: If result is null, then log something. Or perhaps throw InvalidOperationException and allow the caller to handle it and log it.
             return new List<OmdbMovieShortDetailsDto>();
         }
+    }
+
+    private static bool IsSuccessfulOmdbResponse(string? responseStatus)
+    {
+        return string.Equals(
+            responseStatus,
+            "True",
+            StringComparison.OrdinalIgnoreCase);
     }
 
     private static class ConfigurationManagerKeys // TODO Move to it's own file when more keys are needed by other files

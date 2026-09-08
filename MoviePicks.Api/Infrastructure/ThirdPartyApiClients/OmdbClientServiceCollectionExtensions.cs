@@ -1,5 +1,6 @@
 ﻿namespace MoviePicks.Api.Infrastructure.ThirdPartyApiClients;
 
+using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Options;
 using MoviePicks.Api.Configuration;
 
@@ -30,9 +31,13 @@ public static class OmdbClientServiceCollectionExtensions
                 "Invalid configuration: Omdb:BaseUrl must be a valid absolute HTTP/HTTPS URI. Check appsettings.json.")
             .ValidateOnStart();
 
-        // Configure a typed HTTP client for OMDb.
-        // The base address comes from validated configuration above, so no additional checks are needed here.
-        services.AddHttpClient<IOmdbApiMoviesReader, OmdbApiMoviesReader>(
+        // Register OmdbMoviesReader as a typed HTTP client.
+        // - Lifetime: Transient (a new OmdbMoviesReader instance per DI request).
+        // - The underlying HttpMessageHandler and its TCP connection pool are managed
+        //   separately by IHttpClientFactory, so Transient here does not cause socket exhaustion.
+        // - Registered by concrete type (not by IOmdbMoviesReader) so that the decorator
+        //   CachedOmdbApiMoviesReader below can resolve it directly without creating a circular dependency.
+        services.AddHttpClient<OmdbMoviesReader>(
             (serviceProvider, client) =>
             {
                 var options = serviceProvider
@@ -40,6 +45,18 @@ public static class OmdbClientServiceCollectionExtensions
                     .Value;
                 client.BaseAddress = new Uri(options.BaseUrl);
             });
+
+        // Register the caching decorator as the implementation of IOmdbMoviesReader.
+        // - Lifetime: Scoped (one instance per HTTP request).
+        // - Decorator pattern: CachedOmdbApiMoviesReader wraps OmdbMoviesReader and
+        //   adds HybridCache (L1 in-memory + L2 Redis) transparently. All consumers
+        //   that inject IOmdbMoviesReader receive the cached version automatically.
+        // - HybridCache is registered as a singleton by ConfigureServices and shared
+        //   across requests, so these scoped readers use the same L1 in-memory cache.
+        services.AddScoped<IOmdbMoviesReader>(sp =>
+            new CachedOmdbApiMoviesReader(
+                innerReader: sp.GetRequiredService<OmdbMoviesReader>(),
+                hybridCache: sp.GetRequiredService<HybridCache>()));
 
         return services;
     }

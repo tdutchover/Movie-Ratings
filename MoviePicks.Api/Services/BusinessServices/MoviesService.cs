@@ -1,7 +1,6 @@
 ﻿namespace MoviePicks.Api.Services.BusinessServices;
 
 using Microsoft.EntityFrameworkCore;
-using MoviePicks.Api.Infrastructure.Exceptions;
 using MoviePicks.Api.Infrastructure.Mappers;
 using MoviePicks.Api.Infrastructure.ThirdPartyApiClients;
 using MoviePicks.Api.Models;
@@ -13,9 +12,9 @@ using System.Collections.Generic;
 public class MoviesService : IMoviesService
 {
     private readonly IUnitOfWork unitOfWork;
-    private readonly IOmdbApiMoviesReader omdbMovieReader;
+    private readonly IOmdbMoviesReader omdbMovieReader;
 
-    public MoviesService(DbMovieContext db, IUnitOfWork unitOfWork, IOmdbApiMoviesReader omdbMovieReader)
+    public MoviesService(IUnitOfWork unitOfWork, IOmdbMoviesReader omdbMovieReader)
     {
         this.unitOfWork = unitOfWork;
         this.omdbMovieReader = omdbMovieReader;
@@ -139,17 +138,6 @@ public class MoviesService : IMoviesService
         }
 
         return false;
-
-        try
-        {
-            this.unitOfWork.MovieRepository.Delete(movieId);
-            await this.unitOfWork.SaveAsync();
-        }
-        catch (EntityDeletionException ex)
-        {
-            // Handle or log the exception as needed
-            throw; // Rethrow to be caught by global exception handler
-        }
     }
 
     public async Task<List<MovieViewModel>> GetFilteredMovieViewModels(MovieFilterDto filterDTO)
@@ -180,7 +168,7 @@ public class MoviesService : IMoviesService
     public async Task<MovieViewModel> GetMovieViewModel(int movieId, PlotSize plotSize)
     {
         Movie movie = await Task.Run(() => this.unitOfWork.MovieRepository.GetMovie(movieId));
-        OmdbMovieDetailsDto omdbMovieDetails = await this.omdbMovieReader.GetMovieByImdbId(movie.ImdbId, plotSize);
+        OmdbMovieDetailsDto omdbMovieDetails = await this.GetCachedOmdbMovieDetails(movie.ImdbId, plotSize);
         return new CompositeMovie(movie, omdbMovieDetails).ToMovieViewModel();
     }
 
@@ -197,12 +185,21 @@ public class MoviesService : IMoviesService
 
         foreach (Movie movie in movies)
         {
-            OmdbMovieDetailsDto omdbMovieDetails = await this.omdbMovieReader.GetMovieByImdbId(movie.ImdbId, PlotSize.Short);
+            OmdbMovieDetailsDto omdbMovieDetails = await this.GetCachedOmdbMovieDetails(movie.ImdbId, PlotSize.Short);
 
             compositeMovies.Add(new CompositeMovie(movie, omdbMovieDetails));
         }
 
         return compositeMovies;
+    }
+
+    /// <summary>
+    /// Retrieves OMDB movie details. Caching is handled transparently by the
+    /// cache implementation of IOmdbMoviesReader.
+    /// </summary>
+    private async Task<OmdbMovieDetailsDto> GetCachedOmdbMovieDetails(string imdbId, PlotSize plotSize)
+    {
+        return await this.omdbMovieReader.GetMovieByImdbId(imdbId, plotSize);
     }
 
     private IQueryable<Movie> ApplyRatingFilter(IQueryable<Movie> query, int? rating)
@@ -253,7 +250,7 @@ public class MoviesService : IMoviesService
 
         foreach (var movie in movies)
         {
-            OmdbMovieDetailsDto omdbMovieDetails = await this.omdbMovieReader.GetMovieByImdbId(movie.ImdbId, PlotSize.Short);
+            OmdbMovieDetailsDto omdbMovieDetails = await this.GetCachedOmdbMovieDetails(movie.ImdbId, PlotSize.Short);
             movieViewModels.Add(new CompositeMovie(movie, omdbMovieDetails).ToMovieViewModel());
         }
 
