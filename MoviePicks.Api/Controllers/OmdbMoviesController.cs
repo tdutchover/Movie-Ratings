@@ -11,9 +11,9 @@ using System.ComponentModel.DataAnnotations;
 [ApiController]
 public class OmdbMoviesController : ControllerBase
 {
-    private readonly IOmdbApiMoviesReader omdbApiMoviesReader;
+    private readonly IOmdbMoviesReader omdbApiMoviesReader;
 
-    public OmdbMoviesController(IOmdbApiMoviesReader omdbApiMoviesReader)
+    public OmdbMoviesController(IOmdbMoviesReader omdbApiMoviesReader)
     {
         this.omdbApiMoviesReader = omdbApiMoviesReader;
     }

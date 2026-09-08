@@ -1,6 +1,7 @@
 ﻿namespace MoviePicks.Api.Startup;
 
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.DependencyInjection;
 using MoviePicks.Api.Infrastructure.ThirdPartyApiClients;
 using MoviePicks.Api.Models;
@@ -24,6 +25,24 @@ public static partial class ServiceCollectionExtensions
 
         services.AddEndpointsApiExplorer();
         services.AddOpenApi();
+
+        var cacheSettings = configuration.GetSection("HybridCache").Get<Configuration.HybridCacheOptions>() ?? new ();
+
+#pragma warning disable EXTEXP0018 // Still required as of .NET 10 for the Extensions library
+
+        // AddHybridCache registers HybridCache as a singleton.
+        // Requests handled by this API instance share the same cache service
+        // and L1 in-memory cache.
+        services.AddHybridCache(options =>
+        {
+            options.DefaultEntryOptions = new HybridCacheEntryOptions
+            {
+                LocalCacheExpiration = TimeSpan.FromHours(cacheSettings.LocalCacheExpirationHours), // L1 (in-memory) Expiry
+                Expiration = TimeSpan.FromDays(cacheSettings.DistributedCacheExpirationDays),       // L2 (redis) Expiry
+            };
+            options.MaximumPayloadBytes = cacheSettings.MaxPayloadBytes;
+        });
+#pragma warning restore EXTEXP0018
 
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<IMoviesService, MoviesService>();

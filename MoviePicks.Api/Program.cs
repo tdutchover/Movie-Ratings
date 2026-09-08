@@ -1,10 +1,13 @@
 using Microsoft.Extensions.Options;
-using MoviePicks.Api.Startup;
 using MoviePicks.Api.Routing;
+using MoviePicks.Api.Startup;
+using MoviePicks.Contracts;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+
+builder.AddRedisDistributedCache(connectionName: BackendInfrastructureConstants.RedisResourceConnectionName);
 
 builder.Services.ConfigureServices(builder.Configuration, builder.Environment);
 
